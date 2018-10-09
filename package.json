@@ -1,8 +1,8 @@
 {
   "name": "kitsunet-block-tracker",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "An Ethereum block tracker over libp2p pubsub",
+  "main": "src/index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },

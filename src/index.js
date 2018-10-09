@@ -2,17 +2,19 @@
 
 const assert = require('assert')
 
-const createEthProvider = require('../eth-provider')
 const hexUtils = require('../eth-provider/hex-utils')
 
 const log = require('debug')('kitsunet:block-tracker')
 
-module.exports = function ({ node, trackerRpcUrl, handler }) {
+const DEFAULT_TOPIC = 'kitsunet:block-header'
+
+module.exports = function ({ node, ethProvider, topic, handler }) {
   assert(node, `libp2p node is required`)
   assert(handler, `handler is required`)
 
+  topic = topic || DEFAULT_TOPIC
+
   const blocks = new Map()
-  const ethProvider = createEthProvider({ rpcUrl: trackerRpcUrl || 'https://mainnet.infura.io/' })
 
   if (!handler) {
     throw new Error(`handler not provided`)
@@ -20,7 +22,7 @@ module.exports = function ({ node, trackerRpcUrl, handler }) {
 
   let enabled = false
 
-  node.multicast.subscribe('block-header', handler)
+  node.multicast.on(topic, handler)
 
   const trackerCb = (blockNumber) => {
     log(`latest block is: ${Number(blockNumber)}`)
@@ -46,14 +48,14 @@ module.exports = function ({ node, trackerRpcUrl, handler }) {
   }
 
   function publish (blockHeader) {
-    node.multicast.publish('block-header', blockHeader, -1, (err) => {
+    node.multicast.publish(topic, blockHeader, -1, (err) => {
       if (err) {
         log(err)
       }
     })
   }
 
-  node.multicast.addFrwdHooks('block-header', [(peer, msg, cb) => {
+  node.multicast.addFrwdHooks(topic, [(peer, msg, cb) => {
     let block = null
     try {
       block = JSON.parse(msg.data.toString())
@@ -67,7 +69,7 @@ module.exports = function ({ node, trackerRpcUrl, handler }) {
 
     const peerBlocks = blocks.has(peer.info.id.toB58String()) || new Set()
     if (peerBlocks.has(block.number)) {
-      const msg = `skipping block ${block.number}`
+      const msg = `already forwarded to peer, skipping block ${block.number}`
       log(msg)
       return cb(msg)
     }
