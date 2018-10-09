@@ -12,6 +12,7 @@
     "url": "https://github.com/MetaMask/kitsunet-block-tracker"
   },
   "dependencies": {
+    "async": "^2.6.1",
     "debug": "^4.1.0",
     "ethjs-util": "^0.1.6"
   },

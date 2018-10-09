@@ -43,10 +43,6 @@ class Tracker extends EventEmitter {
       peerBlocks.add(block.number)
       return true
     }])
-
-    this.node.multicast.on(topic, (header) => {
-      this.emit(topic, header)
-    })
   }
 
   getBlockByNumber (blockNumber) {
@@ -57,7 +53,7 @@ class Tracker extends EventEmitter {
         log(err)
         return
       }
-      this.publish(Buffer.from(JSON.stringify(block)))
+      this._publish(Buffer.from(JSON.stringify(block)))
     })
   }
 
@@ -73,12 +69,23 @@ class Tracker extends EventEmitter {
     }
   }
 
-  publish (blockHeader) {
+  _publish (blockHeader) {
     this.node.multicast.publish(this.topic, blockHeader, -1, (err) => {
       if (err) {
         log(err)
       }
     })
+  }
+
+  onBlock (handler) {
+    this.node.multicast.subscribe(this.topic, (msg) => {
+      const data = msg.data.toString()
+      try {
+        handler(JSON.parse(data))
+      } catch (err) {
+        log(err)
+      }
+    }, () => { })
   }
 }
 
