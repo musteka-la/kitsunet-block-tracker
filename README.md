@@ -11,12 +11,12 @@ const node = // create libp2p node
 const ethProvider = // create eth provider
 
 const blockTracker = blockTrackerFactory({
-  node, 
-  ethProvider: 
-  rpcUrl: 'https://mainnet.infura.io/', 
+  node,
+  ethProvider,
+  rpcUrl: 'https://mainnet.infura.io/',
   handler: (message) => {
     ...
-  }, 
+  },
   topic: 'my-awesome-app:block-header'
 })
 ```
