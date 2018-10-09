@@ -13,9 +13,9 @@
   },
   "dependencies": {
     "debug": "^4.1.0",
-    "eth-block-tracker": "^4.0.3",
-    "eth-query": "^2.1.2",
-    "ethjs-provider-http": "^0.1.6",
-    "libp2p-multicast-experiment": "github:metamask/js-libp2p-multicast-experiment#52515fab14bd94c9495388310cf45370f013fa16"
+    "ethjs-util": "^0.1.6"
+  },
+  "devDependencies": {
+    "tape": "^4.9.1"
   }
 }
