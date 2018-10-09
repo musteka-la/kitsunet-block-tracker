@@ -8,7 +8,7 @@ const log = require('debug')('kitsunet:block-tracker')
 
 const DEFAULT_TOPIC = 'kitsunet:block-header'
 
-class Tracker extends EventEmitter {
+class BlockTracker extends EventEmitter {
   constructor ({ node, ethProvider, topic }) {
     super()
 
@@ -89,4 +89,4 @@ class Tracker extends EventEmitter {
   }
 }
 
-module.exports = Tracker
+module.exports = BlockTracker
