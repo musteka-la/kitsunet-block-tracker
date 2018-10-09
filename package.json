@@ -6,8 +6,11 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "author": "",
+  "author": "Dmitriy Ryajov <dryajov@gmail.com>",
   "license": "MIT",
+  "repository": {
+    "url": "https://github.com/MetaMask/kitsunet-block-tracker"
+  },
   "dependencies": {
     "debug": "^4.1.0",
     "eth-block-tracker": "^4.0.3",

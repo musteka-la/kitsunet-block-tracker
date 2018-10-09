@@ -1,9 +1,7 @@
 'use strict'
 
 const assert = require('assert')
-
 const hexUtils = require('../eth-provider/hex-utils')
-
 const log = require('debug')('kitsunet:block-tracker')
 
 const DEFAULT_TOPIC = 'kitsunet:block-header'
