@@ -1,81 +1,85 @@
 'use strict'
 
 const assert = require('assert')
+const EventEmitter = require('events')
 const hexUtils = require('./hex-utils')
+
 const log = require('debug')('kitsunet:block-tracker')
 
 const DEFAULT_TOPIC = 'kitsunet:block-header'
 
-module.exports = function ({ node, ethProvider, topic, handler }) {
-  assert(node, `libp2p node is required`)
-  assert(handler, `handler is required`)
+class Tracker extends EventEmitter {
+  constructor ({ node, ethProvider, topic }) {
+    super()
 
-  topic = topic || DEFAULT_TOPIC
+    assert(node, `libp2p node is required`)
+    assert(ethProvider, `ethProvider is required`)
 
-  const blocks = new Map()
+    this.node = node
+    this.ethProvider = ethProvider
+    this.topic = topic || DEFAULT_TOPIC
+    this.enabled = false
 
-  if (!handler) {
-    throw new Error(`handler not provided`)
+    const blocks = new Map()
+
+    this.node.multicast.addFrwdHooks(topic, [(peer, msg, cb) => {
+      let block = null
+      try {
+        block = JSON.parse(msg.data.toString())
+        if (!block) {
+          return cb(new Error(`No block in message!`))
+        }
+      } catch (err) {
+        log(err)
+        return cb(err)
+      }
+
+      const peerBlocks = blocks.has(peer.info.id.toB58String()) || new Set()
+      if (peerBlocks.has(block.number)) {
+        const msg = `already forwarded to peer, skipping block ${block.number}`
+        log(msg)
+        return cb(msg)
+      }
+      peerBlocks.add(block.number)
+      return true
+    }])
+
+    this.node.multicast.on(topic, (header) => {
+      this.emit(topic, header)
+    })
   }
 
-  let enabled = false
-
-  node.multicast.on(topic, handler)
-
-  const trackerCb = (blockNumber) => {
+  getBlockByNumber (blockNumber) {
     log(`latest block is: ${Number(blockNumber)}`)
     const cleanHex = hexUtils.formatHex(blockNumber)
-    ethProvider.ethQuery.getBlockByNumber(cleanHex, false, (err, block) => {
+    this.ethProvider.ethQuery.getBlockByNumber(cleanHex, false, (err, block) => {
       if (err) {
         log(err)
         return
       }
-      publish(Buffer.from(JSON.stringify(block)))
+      this.publish(Buffer.from(JSON.stringify(block)))
     })
   }
 
-  function enable (enable) {
-    if (enabled !== enable) {
-      enabled = enable
-      if (enabled) {
-        ethProvider.blockTracker.on('latest', trackerCb)
+  enable (enable) {
+    if (this.enabled !== enable) {
+      this.enabled = enable
+      const getBlockByNumber = this.getBlockByNumber.bind(this)
+      if (this.enabled) {
+        this.ethProvider.blockTracker.on('latest', getBlockByNumber)
       } else {
-        ethProvider.blockTracker.removeListener('latest', trackerCb)
+        this.ethProvider.blockTracker.removeListener('latest', getBlockByNumber)
       }
     }
   }
 
-  function publish (blockHeader) {
-    node.multicast.publish(topic, blockHeader, -1, (err) => {
+  publish (blockHeader) {
+    this.node.multicast.publish(this.topic, blockHeader, -1, (err) => {
       if (err) {
         log(err)
       }
     })
   }
-
-  node.multicast.addFrwdHooks(topic, [(peer, msg, cb) => {
-    let block = null
-    try {
-      block = JSON.parse(msg.data.toString())
-      if (!block) {
-        return cb(new Error(`No block in message!`))
-      }
-    } catch (err) {
-      log(err)
-      return cb(err)
-    }
-
-    const peerBlocks = blocks.has(peer.info.id.toB58String()) || new Set()
-    if (peerBlocks.has(block.number)) {
-      const msg = `already forwarded to peer, skipping block ${block.number}`
-      log(msg)
-      return cb(msg)
-    }
-    peerBlocks.add(block.number)
-    return true
-  }])
-
-  return {
-    enable
-  }
 }
+
+module.exports = Tracker
