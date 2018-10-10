@@ -13,7 +13,6 @@ class BlockTracker extends EventEmitter {
     super()
 
     assert(node, `libp2p node is required`)
-    assert(ethProvider, `ethProvider is required`)
 
     this.node = node
     this.ethProvider = ethProvider
@@ -58,6 +57,10 @@ class BlockTracker extends EventEmitter {
   }
 
   enable (enable) {
+    if (!this.ethProvider) {
+      return log(`no eth provider, skipping block tracking`)
+    }
+
     if (this.enabled !== enable) {
       this.enabled = enable
       const getBlockByNumber = this.getBlockByNumber.bind(this)
