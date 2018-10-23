@@ -9,13 +9,14 @@ const log = require('debug')('kitsunet:block-tracker')
 const DEFAULT_TOPIC = 'kitsunet:block-header'
 
 class BlockTracker extends EventEmitter {
-  constructor ({ node, ethProvider, topic }) {
+  constructor ({ node, provider, topic, ethQuery }) {
     super()
 
     assert(node, `libp2p node is required`)
 
     this.node = node
-    this.ethProvider = ethProvider
+    this.ethProvider = provider
+    this.ethQuery = ethQuery
     this.topic = topic || DEFAULT_TOPIC
     this.started = false
     this.currentBlock = null
@@ -40,7 +41,7 @@ class BlockTracker extends EventEmitter {
         return cb(msg)
       }
       peerBlocks.add(block.number)
-      return true
+      return cb()
     }])
   }
 
@@ -57,7 +58,7 @@ class BlockTracker extends EventEmitter {
   getBlockByNumber (blockNumber) {
     log(`latest block is: ${Number(blockNumber)}`)
     const cleanHex = hexUtils.formatHex(blockNumber)
-    this.ethProvider.ethQuery.getBlockByNumber(cleanHex, false, (err, block) => {
+    this.ethQuery.getBlockByNumber(cleanHex, false, (err, block) => {
       if (err) {
         log(err)
         return
@@ -71,9 +72,10 @@ class BlockTracker extends EventEmitter {
       this.node.multicast.subscribe(this.topic, this._handler.bind(this), () => { })
 
       if (!this.ethProvider) {
-        return log(`no eth provider, skipping block tracking`)
+        return log(`no eth provider, skipping block tracking from rpc`)
       }
-      this.ethProvider.blockTracker.on('latest', this.getBlockByNumber.bind(this))
+
+      this.ethProvider.on('latest', this.getBlockByNumber.bind(this))
     }
   }
 
@@ -84,7 +86,7 @@ class BlockTracker extends EventEmitter {
         return log(`no eth provider, skipping block tracking`)
       }
 
-      this.ethProvider.blockTracker.removeListener('latest', this.getBlockByNumber.bind(this))
+      this.ethProvider.removeListener('latest', this.getBlockByNumber.bind(this))
     }
   }
 
@@ -92,7 +94,9 @@ class BlockTracker extends EventEmitter {
     const data = msg.data.toString()
     try {
       const block = JSON.parse(data)
-      if (Number(block.number) > this.currentBlock) {
+      const number = this.currentBlock ? Number(this.currentBlock.number) : 0
+      log(`got new block from pubsub ${number}`)
+      if (Number(block.number) > number) {
         const oldBlock = this.currentBlock
         this.currentBlock = block
         this.emit('latest', this.currentBlock)
