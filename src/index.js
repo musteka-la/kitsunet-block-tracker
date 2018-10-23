@@ -41,7 +41,7 @@ class BlockTracker extends EventEmitter {
         return cb(msg)
       }
       peerBlocks.add(block.number)
-      return cb()
+      return cb(null, msg)
     }])
   }
 
