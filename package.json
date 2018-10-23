@@ -9,7 +9,7 @@
   "author": "Dmitriy Ryajov <dryajov@gmail.com>",
   "license": "MIT",
   "repository": {
-    "url": "https://github.com/MetaMask/kitsunet-block-tracker"
+    "url": "https://github.com/MetaMask/kitsunet-block-tracker.git"
   },
   "dependencies": {
     "async": "^2.6.1",

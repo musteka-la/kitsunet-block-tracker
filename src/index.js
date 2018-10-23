@@ -17,11 +17,11 @@ class BlockTracker extends EventEmitter {
     this.node = node
     this.ethProvider = ethProvider
     this.topic = topic || DEFAULT_TOPIC
-    this.enabled = false
+    this.started = false
+    this.currentBlock = null
+    this.blocks = new Map()
 
-    const blocks = new Map()
-
-    this.node.multicast.addFrwdHooks(topic, [(peer, msg, cb) => {
+    this.node.multicast.addFrwdHooks(this.topic, [(peer, msg, cb) => {
       let block = null
       try {
         block = JSON.parse(msg.data.toString())
@@ -33,7 +33,7 @@ class BlockTracker extends EventEmitter {
         return cb(err)
       }
 
-      const peerBlocks = blocks.has(peer.info.id.toB58String()) || new Set()
+      const peerBlocks = this.blocks.has(peer.info.id.toB58String()) || new Set()
       if (peerBlocks.has(block.number)) {
         const msg = `already forwarded to peer, skipping block ${block.number}`
         log(msg)
@@ -42,6 +42,16 @@ class BlockTracker extends EventEmitter {
       peerBlocks.add(block.number)
       return true
     }])
+  }
+
+  getCurrentBlock () {
+    return this.currentBlock
+  }
+
+  async getLatestBlock () {
+    if (this.currentBlock) return this.currentBlock
+    return Promise(resolve => this.on('latest', resolve)
+      .then(() => this.currentBlock))
   }
 
   getBlockByNumber (blockNumber) {
@@ -56,19 +66,41 @@ class BlockTracker extends EventEmitter {
     })
   }
 
-  enable (enable) {
-    if (!this.ethProvider) {
-      return log(`no eth provider, skipping block tracking`)
-    }
+  start () {
+    if (!this.started) {
+      this.node.multicast.subscribe(this.topic, this._handler.bind(this), () => { })
 
-    if (this.enabled !== enable) {
-      this.enabled = enable
-      const getBlockByNumber = this.getBlockByNumber.bind(this)
-      if (this.enabled) {
-        this.ethProvider.blockTracker.on('latest', getBlockByNumber)
-      } else {
-        this.ethProvider.blockTracker.removeListener('latest', getBlockByNumber)
+      if (!this.ethProvider) {
+        return log(`no eth provider, skipping block tracking`)
       }
+      this.ethProvider.blockTracker.on('latest', this.getBlockByNumber.bind(this))
+    }
+  }
+
+  stop () {
+    if (this.started) {
+      this.node.multicast.unsubscribe(this.topic, this._handler.bind(this), () => {})
+      if (!this.ethProvider) {
+        return log(`no eth provider, skipping block tracking`)
+      }
+
+      this.ethProvider.blockTracker.removeListener('latest', this.getBlockByNumber.bind(this))
+    }
+  }
+
+  _handler (msg) {
+    const data = msg.data.toString()
+    try {
+      const block = JSON.parse(data)
+      if (Number(block.number) > this.currentBlock) {
+        const oldBlock = this.currentBlock
+        this.currentBlock = block
+        this.emit('latest', this.currentBlock)
+        this.emit('sync', { block, oldBlock })
+        this.emit('block', this.currentBlock)
+      }
+    } catch (err) {
+      log(err)
     }
   }
 
@@ -78,17 +110,6 @@ class BlockTracker extends EventEmitter {
         log(err)
       }
     })
-  }
-
-  onBlock (handler) {
-    this.node.multicast.subscribe(this.topic, (msg) => {
-      const data = msg.data.toString()
-      try {
-        handler(JSON.parse(data))
-      } catch (err) {
-        log(err)
-      }
-    }, () => { })
   }
 }
 
