@@ -14,7 +14,8 @@
   "dependencies": {
     "async": "^2.6.1",
     "debug": "^4.1.0",
-    "ethjs-util": "^0.1.6"
+    "ethjs-util": "^0.1.6",
+    "pify": "^4.0.1"
   },
   "devDependencies": {
     "tape": "^4.9.1"
