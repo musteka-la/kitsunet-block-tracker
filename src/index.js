@@ -67,26 +67,22 @@ class BlockTracker extends EventEmitter {
   async start () {
     if (!this.started) {
       this.multicast.addFrwdHooks(this.topic, [this._hook.bind(this)])
-
-      this.node.multicast.subscribe(this.topic, this._handler.bind(this), () => { })
+      await this.multicast.subscribe(this.topic, this._handler.bind(this))
 
       if (!this.ethProvider) {
         return log(`no eth provider, skipping block tracking from rpc`)
       }
-
       this.ethProvider.on('latest', this.getBlockByNumber.bind(this))
     }
   }
 
   async stop () {
     if (this.started) {
-      this.node.multicast.unsubscribe(this.topic, this._handler.bind(this), () => {})
+      await this.multicast.unsubscribe(this.topic, this._handler.bind(this))
       this.multicast.removeFrwdHooks(this.topic, [this._hook.bind(this)])
-
       if (!this.ethProvider) {
         return log(`no eth provider, skipping block tracking`)
       }
-
       this.ethProvider.removeListener('latest', this.getBlockByNumber.bind(this))
     }
   }
@@ -110,11 +106,7 @@ class BlockTracker extends EventEmitter {
   }
 
   _publish (blockHeader) {
-    this.node.multicast.publish(this.topic, blockHeader, -1, (err) => {
-      if (err) {
-        log(err)
-      }
-    })
+    this.multicast.publish(this.topic, blockHeader, -1)
   }
 }
 
