@@ -10,14 +10,14 @@ const log = require('debug')('kitsunet:block-tracker')
 const DEFAULT_TOPIC = 'kitsunet:block-header'
 
 class BlockTracker extends EventEmitter {
-  constructor ({ node, provider, topic, ethQuery }) {
+  constructor ({ node, blockTracker, topic, ethQuery }) {
     super()
 
     assert(node, `libp2p node is required`)
 
     this.node = node
     this.multicast = pify(this.node.multicast)
-    this.ethProvider = provider
+    this.blockTracker = blockTracker
     this.ethQuery = ethQuery ? pify(ethQuery) : null
     this.topic = topic || DEFAULT_TOPIC
     this.started = false
@@ -31,8 +31,8 @@ class BlockTracker extends EventEmitter {
 
   async getLatestBlock () {
     if (this.currentBlock) return this.currentBlock
-    return Promise(resolve => this.on('latest', resolve)
-      .then(() => this.currentBlock))
+    await new Promise(resolve => this.once('latest', resolve))
+    return this.currentBlock
   }
 
   async getBlockByNumber (blockNumber) {
@@ -69,10 +69,10 @@ class BlockTracker extends EventEmitter {
       this.multicast.addFrwdHooks(this.topic, [this._hook.bind(this)])
       await this.multicast.subscribe(this.topic, this._handler.bind(this))
 
-      if (!this.ethProvider) {
+      if (!this.blockTracker) {
         return log(`no eth provider, skipping block tracking from rpc`)
       }
-      this.ethProvider.on('latest', this.getBlockByNumber.bind(this))
+      this.blockTracker.on('latest', this.getBlockByNumber.bind(this))
     }
   }
 
@@ -80,10 +80,10 @@ class BlockTracker extends EventEmitter {
     if (this.started) {
       await this.multicast.unsubscribe(this.topic, this._handler.bind(this))
       this.multicast.removeFrwdHooks(this.topic, [this._hook.bind(this)])
-      if (!this.ethProvider) {
+      if (!this.blockTracker) {
         return log(`no eth provider, skipping block tracking`)
       }
-      this.ethProvider.removeListener('latest', this.getBlockByNumber.bind(this))
+      this.blockTracker.removeListener('latest', this.getBlockByNumber.bind(this))
     }
   }
 
