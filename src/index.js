@@ -5,8 +5,9 @@ const EventEmitter = require('events')
 const hexUtils = require('./hex-utils')
 const pify = require('pify')
 
-const log = require('debug')('kitsunet:block-tracker')
+const LruCache = require('mnemonist/lru-cache')
 
+const log = require('debug')('kitsunet:block-tracker')
 const DEFAULT_TOPIC = 'kitsunet:block-header'
 
 class BlockTracker extends EventEmitter {
@@ -22,7 +23,7 @@ class BlockTracker extends EventEmitter {
     this.topic = topic || DEFAULT_TOPIC
     this.started = false
     this.currentBlock = null
-    this.blocks = new Map()
+    this.blocks = new LruCache(1000)
   }
 
   getCurrentBlock () {
@@ -54,14 +55,17 @@ class BlockTracker extends EventEmitter {
       return cb(err)
     }
 
-    const peerBlocks = this.blocks.has(peer.info.id.toB58String()) || new Set()
-    if (peerBlocks.has(block.number)) {
-      const msg = `already forwarded to peer, skipping block ${block.number}`
-      log(msg)
-      return cb(msg)
+    const peerId = peer.info.id.toB58String()
+    const peerBlocks = this.blocks.get(peer.info.id.toB58String()) || new LruCache(1000)
+    if (!peerBlocks.has(block.number)) {
+      this.blocks.set(peerId, peerBlocks)
+      peerBlocks.set(block.number, true)
+      return cb(null, msg)
     }
-    peerBlocks.add(block.number)
-    return cb(null, msg)
+
+    const skipMsg = `already forwarded to peer, skipping block ${block.number}`
+    log(skipMsg)
+    return cb(skipMsg)
   }
 
   async start () {
