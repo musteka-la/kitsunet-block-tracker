@@ -24,6 +24,10 @@ class BlockTracker extends EventEmitter {
     this.started = false
     this.currentBlock = null
     this.blocks = new LruCache(1000)
+
+    this.hook = this._hook.bind(this)
+    this.handler = this._handler.bind(this)
+    this.getBlockByNumber = this._getBlockByNumber.bind(this)
   }
 
   getCurrentBlock () {
@@ -36,7 +40,7 @@ class BlockTracker extends EventEmitter {
     return this.currentBlock
   }
 
-  async getBlockByNumber (blockNumber) {
+  async _getBlockByNumber (blockNumber) {
     log(`latest block is: ${Number(blockNumber)}`)
     const cleanHex = hexUtils.formatHex(blockNumber)
     const block = await this.ethQuery.getBlockByNumber(cleanHex, false)
@@ -70,24 +74,24 @@ class BlockTracker extends EventEmitter {
 
   async start () {
     if (!this.started) {
-      this.multicast.addFrwdHooks(this.topic, [this._hook.bind(this)])
-      await this.multicast.subscribe(this.topic, this._handler.bind(this))
+      this.multicast.addFrwdHooks(this.topic, [this.hook])
+      await this.multicast.subscribe(this.topic, this.handler)
 
       if (!this.blockTracker) {
         return log(`no eth provider, skipping block tracking from rpc`)
       }
-      this.blockTracker.on('latest', this.getBlockByNumber.bind(this))
+      this.blockTracker.on('latest', this.getBlockByNumber)
     }
   }
 
   async stop () {
     if (this.started) {
-      await this.multicast.unsubscribe(this.topic, this._handler.bind(this))
-      this.multicast.removeFrwdHooks(this.topic, [this._hook.bind(this)])
+      await this.multicast.unsubscribe(this.topic, this.handler)
+      this.multicast.removeFrwdHooks(this.topic, [this.hook])
       if (!this.blockTracker) {
         return log(`no eth provider, skipping block tracking`)
       }
-      this.blockTracker.removeListener('latest', this.getBlockByNumber.bind(this))
+      this.blockTracker.removeListener('latest', this.getBlockByNumber)
     }
   }
 
