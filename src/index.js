@@ -23,28 +23,32 @@ class BlockTracker extends EventEmitter {
     this.topic = topic || DEFAULT_TOPIC
     this.started = false
     this.currentBlock = null
+    this.oldBlock = null
+    this.peerBlocks = new LruCache(1000)
     this.blocks = new LruCache(1000)
 
     this.hook = this._hook.bind(this)
     this.handler = this._handler.bind(this)
-    this.getBlockByNumber = this._getBlockByNumber.bind(this)
+    this.publishBlockByNumberHandler = this.publishBlockByNumber.bind(this)
   }
 
-  getCurrentBlock () {
-    return this.currentBlock
-  }
-
-  async getLatestBlock () {
-    if (this.currentBlock) return this.currentBlock
-    await new Promise(resolve => this.once('latest', resolve))
-    return this.currentBlock
-  }
-
-  async _getBlockByNumber (blockNumber) {
-    log(`latest block is: ${Number(blockNumber)}`)
-    const cleanHex = hexUtils.formatHex(blockNumber)
-    const block = await this.ethQuery.getBlockByNumber(cleanHex, false)
-    this._publish(Buffer.from(JSON.stringify(block)))
+  _handler (msg) {
+    const data = msg.data.toString()
+    try {
+      const block = JSON.parse(data)
+      log(`got new block from pubsub ${block.number}`)
+      this.blocks.set(block.number, block)
+      const number = this.currentBlock ? Number(this.currentBlock.number) : 0
+      if (Number(block.number) > number) {
+        this.oldBlock = this.currentBlock
+        this.currentBlock = block
+        this.emit('latest', this.currentBlock)
+        this.emit('sync', { block, oldBlock: this.oldBlock })
+        this.emit('block', this.currentBlock)
+      }
+    } catch (err) {
+      log(err)
+    }
   }
 
   _hook (peer, msg, cb) {
@@ -60,9 +64,9 @@ class BlockTracker extends EventEmitter {
     }
 
     const peerId = peer.info.id.toB58String()
-    const peerBlocks = this.blocks.get(peer.info.id.toB58String()) || new LruCache(1000)
+    const peerBlocks = this.peerBlocks.get(peer.info.id.toB58String()) || new LruCache(1000)
     if (!peerBlocks.has(block.number)) {
-      this.blocks.set(peerId, peerBlocks)
+      this.peerBlocks.set(peerId, peerBlocks)
       peerBlocks.set(block.number, true)
       return cb(null, msg)
     }
@@ -70,6 +74,40 @@ class BlockTracker extends EventEmitter {
     const skipMsg = `already forwarded to peer, skipping block ${block.number}`
     log(skipMsg)
     return cb(skipMsg)
+  }
+
+  getOldBlock () {
+    return this.oldBlock
+  }
+
+  getCurrentBlock () {
+    return this.currentBlock
+  }
+
+  async getLatestBlock () {
+    if (this.currentBlock) return this.currentBlock
+    await new Promise(resolve => this.once('latest', resolve))
+    return this.currentBlock
+  }
+
+  async getBlockByNumber (blockNumber) {
+    log(`latest block is: ${Number(blockNumber)}`)
+    const cleanHex = hexUtils.formatHex(blockNumber)
+    if (this.blocks.has(blockNumber)) {
+      return this.blocks.get(blockNumber)
+    }
+
+    let block = null
+    if (this.ethQuery) {
+      block = await this.ethQuery.getBlockByNumber(cleanHex, false)
+    }
+
+    return block
+  }
+
+  async publishBlockByNumber (blockNumber) {
+    const block = await this.getBlockByNumber(blockNumber)
+    this._publish(Buffer.from(JSON.stringify(block)))
   }
 
   async start () {
@@ -80,7 +118,7 @@ class BlockTracker extends EventEmitter {
       if (!this.blockTracker) {
         return log(`no eth provider, skipping block tracking from rpc`)
       }
-      this.blockTracker.on('latest', this.getBlockByNumber)
+      this.blockTracker.on('latest', this.publishBlockByNumberHandler)
     }
   }
 
@@ -91,25 +129,7 @@ class BlockTracker extends EventEmitter {
       if (!this.blockTracker) {
         return log(`no eth provider, skipping block tracking`)
       }
-      this.blockTracker.removeListener('latest', this.getBlockByNumber)
-    }
-  }
-
-  _handler (msg) {
-    const data = msg.data.toString()
-    try {
-      const block = JSON.parse(data)
-      const number = this.currentBlock ? Number(this.currentBlock.number) : 0
-      log(`got new block from pubsub ${number}`)
-      if (Number(block.number) > number) {
-        const oldBlock = this.currentBlock
-        this.currentBlock = block
-        this.emit('latest', this.currentBlock)
-        this.emit('sync', { block, oldBlock })
-        this.emit('block', this.currentBlock)
-      }
-    } catch (err) {
-      log(err)
+      this.blockTracker.removeListener('latest', this.publishBlockByNumberHandler)
     }
   }
 
