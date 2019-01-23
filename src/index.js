@@ -77,21 +77,23 @@ class BlockTracker extends EventEmitter {
   }
 
   getOldBlock () {
-    return this.oldBlock
+    return this.oldBlock.number
   }
 
   getCurrentBlock () {
-    return this.currentBlock
+    return this.currentBlock.number
   }
 
   async getLatestBlock () {
-    if (this.currentBlock) return this.currentBlock
-    await new Promise(resolve => this.once('latest', resolve))
-    return this.currentBlock
+    if (this.currentBlock) return this.currentBlock.number
+    await new Promise(resolve => this.once('latest', (block) => {
+      log(`latest block is: ${Number(block)}`)
+      resolve(block.number)
+    }))
+    return this.currentBlock.number
   }
 
   async getBlockByNumber (blockNumber) {
-    log(`latest block is: ${Number(blockNumber)}`)
     const cleanHex = hexUtils.formatHex(blockNumber)
     if (this.blocks.has(blockNumber)) {
       return this.blocks.get(blockNumber)
