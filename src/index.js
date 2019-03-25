@@ -1,61 +1,68 @@
 'use strict'
 
 const assert = require('assert')
-const EventEmitter = require('events')
-const hexUtils = require('./hex-utils')
-const pify = require('pify')
+const EE = require('events')
+const promisify = require('promisify-this')
+const headerFromRpc = require('ethereumjs-block/header-from-rpc')
+const Header = require('ethereumjs-block').Header
+const Cache = require('lru-cache')
+const utils = require('ethereumjs-util')
 
-const LruCache = require('mnemonist/lru-cache')
+const DEFAULT_BLOCK_TTL = 5
+
+const createCache = (options = { max: 100, maxAge: DEFAULT_BLOCK_TTL }) => {
+  return new Cache(options)
+}
 
 const log = require('debug')('kitsunet:block-tracker')
-const DEFAULT_TOPIC = 'kitsunet:block-header'
+const DEFAULT_TOPIC = '/kitsunet/block-header'
 
-class BlockTracker extends EventEmitter {
+class BlockTracker extends EE {
   constructor ({ node, blockTracker, topic, ethQuery }) {
     super()
 
     assert(node, `libp2p node is required`)
 
     this.node = node
-    this.multicast = pify(this.node.multicast)
-    this.blockTracker = blockTracker
-    this.ethQuery = ethQuery ? pify(ethQuery) : null
+    this.multicast = this.node.multicast
+    this.blockTracker = blockTracker // rpc block tracker
+    this.ethQuery = ethQuery ? promisify(ethQuery) : null
     this.topic = topic || DEFAULT_TOPIC
     this.started = false
-    this.currentBlock = null
-    this.oldBlock = null
-    this.peerBlocks = new LruCache(1000)
-    this.blocks = new LruCache(1000)
+    this.currentHeader = null
+    this.oldHeader = null
+    this.peerHeader = createCache()
+    this.headers = createCache()
 
     this.hook = this._hook.bind(this)
     this.handler = this._handler.bind(this)
-    this.publishBlockByNumberHandler = this.publishBlockByNumber.bind(this)
+    this.publishBlockByNumber = this.publishBlockByNumber.bind(this)
   }
 
   _handler (msg) {
-    const data = msg.data.toString()
     try {
-      const block = JSON.parse(data)
-      log(`got new block from pubsub ${block.number}`)
-      this.blocks.set(block.number, block)
-      const number = this.currentBlock ? Number(this.currentBlock.number) : 0
-      if (Number(block.number) > number) {
-        this.oldBlock = this.currentBlock
-        this.currentBlock = block
-        this.emit('latest', this.currentBlock)
-        this.emit('sync', { block, oldBlock: this.oldBlock })
-        this.emit('block', this.currentBlock)
+      const header = new Header(msg.data)
+      const blockNumber = utils.bufferToInt(header.number)
+      log(`got new block from pubsub ${blockNumber}`)
+      this.headers.set(blockNumber, header)
+      const number = this.currentHeader ? utils.bufferToInt(this.currentHeader.number) : 0
+      if (blockNumber > number) {
+        this.oldHeader = this.currentHeader
+        this.currentHeader = header
+        this.emit('latest', this.currentHeader)
+        this.emit('sync', { block: header, oldBlock: this.oldHeader })
       }
+      this.emit('block', this.currentHeader)
     } catch (err) {
       log(err)
     }
   }
 
   _hook (peer, msg, cb) {
-    let block = null
+    let header = null
     try {
-      block = JSON.parse(msg.data.toString())
-      if (!block) {
+      header = new Header(msg.data)
+      if (!header) {
         return cb(new Error(`No block in message!`))
       }
     } catch (err) {
@@ -64,52 +71,54 @@ class BlockTracker extends EventEmitter {
     }
 
     const peerId = peer.info.id.toB58String()
-    const peerBlocks = this.peerBlocks.get(peer.info.id.toB58String()) || new LruCache(1000)
-    if (!peerBlocks.has(block.number)) {
-      this.peerBlocks.set(peerId, peerBlocks)
-      peerBlocks.set(block.number, true)
+    const peerBlocks = this.peerHeader.get(peer.info.id.toB58String()) || createCache()
+    const blockNumber = utils.bufferToInt(header.number)
+    if (!peerBlocks.has(blockNumber)) {
+      this.peerHeader.set(peerId, peerBlocks)
+      peerBlocks.set(blockNumber, true)
       return cb(null, msg)
     }
 
-    const skipMsg = `already forwarded to peer, skipping block ${block.number}`
+    const skipMsg = `already forwarded to peer, skipping block ${header.number}`
     log(skipMsg)
     return cb(skipMsg)
   }
 
   getOldBlock () {
-    return this.oldBlock.number
+    return this.oldHeader.number
   }
 
   getCurrentBlock () {
-    return this.currentBlock.number
+    return this.currentHeader.number
   }
 
   async getLatestBlock () {
-    if (this.currentBlock) return this.currentBlock.number
+    if (this.currentHeader) return this.currentHeader.number
     await new Promise(resolve => this.once('latest', (block) => {
       log(`latest block is: ${Number(block)}`)
       resolve(block.number)
     }))
-    return this.currentBlock.number
+    return this.currentHeader.number
   }
 
   async getBlockByNumber (blockNumber) {
-    const cleanHex = hexUtils.formatHex(blockNumber)
-    if (this.blocks.has(blockNumber)) {
-      return this.blocks.get(blockNumber)
+    const cleanHex = utils.addHexPrefix(blockNumber)
+    if (this.headers.has(blockNumber)) {
+      return this.headers.get(blockNumber)
     }
 
-    let block = null
+    let header = null
     if (this.ethQuery) {
-      block = await this.ethQuery.getBlockByNumber(cleanHex, false)
+      header = await this.ethQuery.getBlockByNumber(cleanHex, false)
+      header = headerFromRpc(header)
     }
 
-    return block
+    return header
   }
 
   async publishBlockByNumber (blockNumber) {
-    const block = await this.getBlockByNumber(blockNumber)
-    this._publish(Buffer.from(JSON.stringify(block)))
+    const header = await this.getBlockByNumber(blockNumber)
+    this._publish(header.serialize())
   }
 
   async start () {
@@ -120,7 +129,7 @@ class BlockTracker extends EventEmitter {
       if (!this.blockTracker) {
         return log(`no eth provider, skipping block tracking from rpc`)
       }
-      this.blockTracker.on('latest', this.publishBlockByNumberHandler)
+      this.blockTracker.on('latest', this.publishBlockByNumber)
     }
   }
 
@@ -131,7 +140,7 @@ class BlockTracker extends EventEmitter {
       if (!this.blockTracker) {
         return log(`no eth provider, skipping block tracking`)
       }
-      this.blockTracker.removeListener('latest', this.publishBlockByNumberHandler)
+      this.blockTracker.removeListener('latest', this.publishBlockByNumber)
     }
   }
 

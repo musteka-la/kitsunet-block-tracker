@@ -13,11 +13,17 @@
   },
   "dependencies": {
     "async": "^2.6.1",
+    "borc": "^2.1.0",
     "collections": "^5.1.5",
     "debug": "^4.1.0",
+    "ethereumjs-block": "^2.2.0",
+    "ethereumjs-blockchain": "^3.4.0",
+    "ethereumjs-utils": "^5.2.5",
     "ethjs-util": "^0.1.6",
+    "lru-cache": "^5.1.1",
     "mnemonist": "^0.25.1",
-    "pify": "^4.0.1"
+    "pify": "^4.0.1",
+    "promisify-this": "^1.1.3"
   },
   "devDependencies": {
     "tape": "^4.9.1"
