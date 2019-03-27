@@ -58,7 +58,7 @@ class BlockTracker extends EE {
   _hook (peer, msg, cb) {
     let header = null
     try {
-      header = new Block(msg.data)
+      header = (new Block(msg.data)).header
       if (!header) {
         return cb(new Error(`No block in message!`))
       }
